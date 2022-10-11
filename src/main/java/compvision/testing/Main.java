@@ -1,9 +1,12 @@
 package compvision.testing;
 
 import static compvision.testing.Main.solve.start;
+import static org.opencv.core.CvType.CV_32FC1;
 import static org.opencv.imgproc.Imgproc.contourArea;
 
+import compvision.CamCalibration.Calibration;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
@@ -13,70 +16,98 @@ import java.util.List;
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-
-import javax.swing.event.*;
-import java.awt.*;
-import javax.swing.*;
-import org.opencv.calib3d.StereoBM;
-import org.opencv.core.*;
-import org.opencv.core.Point;
-import org.opencv.imgproc.*;
+import javax.swing.JPanel;
+import javax.swing.JSlider;
+import javax.swing.SwingConstants;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+import org.opencv.calib3d.Calib3d;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint;
+import org.opencv.core.Point;
+import org.opencv.core.Scalar;
+import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
+import org.opencv.videoio.Videoio;
 
 public class Main extends TargetData {
+
+
+  public static final String ANSI_RESET = "\u001B[0m";
+  public static final String ANSI_GREEN = "\u001B[32m"; //color text quick why not
 
   public static void main(String[] args) {
 
     System.load("C:\\Users\\koala\\Downloads\\opencv\\build\\java\\x64\\opencv_java460.dll");
-    Mat frame = new Mat();
+
+    Mat standard = new Mat();
+    Mat undist = new Mat();
+    //JFrame jframe = new JFrame("Video");
     VideoCapture camera = new VideoCapture(0);
-    camera.read(frame);
 
+    camera.set(Videoio.CAP_PROP_FRAME_WIDTH, 1280);
+    camera.set(Videoio.CAP_PROP_FRAME_HEIGHT, 720);
+    camera.read(undist);
     start();
-
-    JFrame jframe = new JFrame("Video");
-    jframe.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    Main main = new Main();
+    new Calibration().processer();
+    Mat frame = new Mat();
     JLabel vidpanel = new JLabel();
-    vidpanel.setSize(frame.width(), frame.height());
-    jframe.setContentPane(vidpanel);
-    jframe.setSize(frame.width(), frame.height());
+    JLabel vidpanelNorm = new JLabel();
 
-    jframe.setVisible(true);
     while (true) {
-      if (camera.read(frame)) {
+      if (camera.read(undist)) {
+        Mat maxTrix = new Mat(3, 3, CV_32FC1);
         GripPipeline detectpubs = new GripPipeline();
+        maxTrix.put(0, 0, 1134.224478355993);
+        maxTrix.put(0, 1, 0);
+        maxTrix.put(0, 2, 657.0822079238818);
+        maxTrix.put(1, 0, 0);
+        maxTrix.put(1, 1, 1134.534512866808);
+        maxTrix.put(1, 2, 351.0793471736803);
+        maxTrix.put(2, 0, 0);
+        maxTrix.put(2, 1, 0);
+        maxTrix.put(2, 2, 1);
+
+        Mat distco = new Mat(1, 5, CV_32FC1);
+        distco.put(0, 0, 0.1297334884159764);
+        distco.put(0, 1, -0.9730374784207438);
+        distco.put(0, 2, -0.002135406911210138);
+        distco.put(0, 3, -0.003738121446973457);
+        distco.put(0, 4, 1.852758390710876);
+
+        var newCameraMatrix = Calib3d.getOptimalNewCameraMatrix(maxTrix, distco,
+            new Size(1780, 720), 1);
+
+
+
+        Calib3d.undistort(undist, frame, newCameraMatrix, distco);
+        Imgproc.GaussianBlur(frame, frame, new Size(41, 41), 2, 2);
         detectpubs.process(frame);
         var contours = detectpubs.findContoursOutput();
-        frame = ContourDisplay(contours, frame);
-        ImageIcon image = new ImageIcon(Mat2BufferedImage(frame));
-        vidpanel.setSize(frame.width(), frame.height());
-        vidpanel.setIcon(image);
-        vidpanel.repaint(); //updates frame with new video frame
+        Imgproc.drawContours(frame, contours, 0, new Scalar(255, 255, 0), 2, 3);
+        ContourDisplay(contours, frame);
 
-        StereoBM.create(16);
+        vidpanelNorm = VideoFeedControl.CreateVideo(""
+            + "normal", undist, vidpanelNorm);
+        vidpanel = VideoFeedControl.CreateVideo("map1", frame, vidpanel);
+
+
+
       }
     }
   }
 
-  public static final String ANSI_RESET = "\u001B[0m";
-
-  public static final String ANSI_GREEN = "\u001B[32m"; //color text quick why not
-
-  public static Mat ContourDisplay(ArrayList<MatOfPoint> contours, Mat frame) {
+  public static void ContourDisplay(ArrayList<MatOfPoint> contours, Mat frame) {
     //double alist = 0;
-   // int k = 0;
-   // List<Double> averageRect = new ArrayList<>();
+    // int k = 0;
+    // List<Double> averageRect = new ArrayList<>();
     // ^^use for getting ratio data
     int i = 0;
     List<TargetData> targetList = new ArrayList<>();
     for (MatOfPoint contour : contours) {
-
       var rect = Imgproc.boundingRect(contour);
-      var rectArea = rect.area();
-      //(contArea / rectArea > .007 && contArea / rectArea < .02)
-      //(contArea / rectArea > B.getValue()/1000.0 && contArea / rectArea < G.getValue()/1000.0) {
-      //^^old method of filtering might use later, works well filtering straight not, not good with angles
       double contArea = 0;
       double targetFullnessRatio = 0.0;
 
@@ -90,13 +121,11 @@ public class Main extends TargetData {
 
         var convexArea = contourArea(convexHulls);
         targetFullnessRatio = contArea / convexArea;
-        if(!Double.isNaN(targetFullnessRatio) && targetFullnessRatio != 0.0){
+        if (!Double.isNaN(targetFullnessRatio) && targetFullnessRatio != 0.0) {
           System.out.println(targetFullnessRatio);
 
         }
 
-        //contour.depth();
-        //Point2D.distance(contour.)
         if (targetFullnessRatio > .1 && targetFullnessRatio < 0.25) { //Aspect ratio checking
           TargetData target = new TargetData();
 
@@ -104,29 +133,31 @@ public class Main extends TargetData {
           target.setTargetCenter(new Point(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0));
           Imgproc.circle(frame, target.getTargetCenter(), 1, new Scalar(0, 0, 255), 1);
 
-          target.setTargetX((target.getTargetCenter().x - (frame.width() / 2.0)) / (frame.width() / 2.0));
-          target.setTargetY((target.getTargetCenter().y - (frame.height() / 2.0)) / (frame.height() / 2.0));
+          target.setTargetX(
+              (target.getTargetCenter().x - (frame.width() / 2.0)) / (frame.width() / 2.0));
+          target.setTargetY(
+              (target.getTargetCenter().y - (frame.height() / 2.0)) / (frame.height() / 2.0));
           targetList.add(target);
         }
       }
     }
-    for (var target : targetList){
+    for (var target : targetList) {
       DecimalFormat decimalFormat = new DecimalFormat("0.0000");
       var targetCoordsX = (decimalFormat.format(target.getTargetX()) + "X");
       var targetCoordsY = (decimalFormat.format(target.getTargetY()) + "Y");
 
       // Displays target x & y position relative to center of camera.
 
-      Imgproc.putText(frame, targetCoordsX, new Point(target.getTargetCenter().x + 40, target.getTargetCenter().y - 10),
+      Imgproc.putText(frame, targetCoordsX,
+          new Point(target.getTargetCenter().x + 40, target.getTargetCenter().y - 10),
           4, .4, new Scalar(255, 0, 0), 1);
-      Imgproc.putText(frame, targetCoordsY, new Point(target.getTargetCenter().x + 40, target.getTargetCenter().y + 10),
+      Imgproc.putText(frame, targetCoordsY,
+          new Point(target.getTargetCenter().x + 40, target.getTargetCenter().y + 10),
           4, .4, new Scalar(255, 0, 0), 1);
       Imgproc.arrowedLine(frame, new Point(frame.width() / 2.0, frame.height() / 2.0),
           target.getTargetCenter(), new Scalar(255, 0, 0)); // Draws line to center of target
     }
-    return frame;
   }
-
 
 
   public static BufferedImage Mat2BufferedImage(Mat m) {
@@ -137,18 +168,6 @@ public class Main extends TargetData {
     final byte[] targetPixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();
     System.arraycopy(b, 0, targetPixels, 0, b.length);
     return image;
-  }
-
-  public static void displayImage(Image img2) {
-    ImageIcon icon = new ImageIcon(img2);
-    JFrame frame = new JFrame();
-    frame.setLayout(new FlowLayout());
-    frame.setSize(img2.getWidth(null) + 50, img2.getHeight(null) + 50);
-    JLabel lbl = new JLabel();
-    lbl.setIcon(icon);
-    frame.add(lbl);
-    frame.setVisible(true);
-    frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
   }
 
   static class solve extends JFrame implements ChangeListener {
