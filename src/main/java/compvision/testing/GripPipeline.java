@@ -27,7 +27,7 @@ public class GripPipeline {
   public static ArrayList<MatOfPoint> origContour = new ArrayList<MatOfPoint>();
 
   static {
-    System.load("C:\\Users\\koala\\Downloads\\opencv\\build\\java\\x64\\opencv_java460.dll");
+    System.load(System.getenv("opencvPath"));
   }
 
   //Outputs
@@ -63,7 +63,7 @@ public class GripPipeline {
     ArrayList<MatOfPoint> filterContoursContours = findContoursOutput;
     double filterContoursMinArea = 0.0;
     double filterContoursMinPerimeter = 0.0;
-    double filterContoursMinWidth = 0.0;
+    double filterContoursMinWidth = 15.0;
     double filterContoursMaxWidth = 100000.0;
     double filterContoursMinHeight = 0.0;
     double filterContoursMaxHeight = 100000.0;

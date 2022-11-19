@@ -1,19 +1,17 @@
 package compvision.testing;
 
 import static compvision.testing.Main.solve.start;
+import static org.opencv.core.Core.BORDER_CONSTANT;
 import static org.opencv.core.CvType.CV_32FC1;
 import static org.opencv.imgproc.Imgproc.contourArea;
 
 import compvision.CamCalibration.Calibration;
-import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
-import javax.swing.ImageIcon;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -25,6 +23,7 @@ import org.opencv.calib3d.Calib3d;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
+import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
@@ -39,27 +38,27 @@ public class Main extends TargetData {
 
   public static void main(String[] args) {
 
-    System.load("C:\\Users\\koala\\Downloads\\opencv\\build\\java\\x64\\opencv_java460.dll");
+    System.load(System.getenv("opencvPath")); // "C:\Users\Username\Downloads\opencv\build\java\x64\opencv_java460.dll"
 
-    Mat standard = new Mat();
-    Mat undist = new Mat();
+    //var standard = new Mat();
+    var undist = new Mat();
     //JFrame jframe = new JFrame("Video");
-    VideoCapture camera = new VideoCapture(0);
+    var camera = new VideoCapture(0);
 
     camera.set(Videoio.CAP_PROP_FRAME_WIDTH, 1280);
     camera.set(Videoio.CAP_PROP_FRAME_HEIGHT, 720);
     camera.read(undist);
     start();
-    Main main = new Main();
+    //var main = new Main();
     new Calibration().processer();
-    Mat frame = new Mat();
-    JLabel vidpanel = new JLabel();
-    JLabel vidpanelNorm = new JLabel();
+    var frame = new Mat();
+    var vidpanel = new JLabel();
+    var vidpanelNorm = new JLabel();
 
     while (true) {
       if (camera.read(undist)) {
         Mat maxTrix = new Mat(3, 3, CV_32FC1);
-        GripPipeline detectpubs = new GripPipeline();
+        GripPipeline detectpubs = new GripPipeline(); // distortion coefficients
         maxTrix.put(0, 0, 1134.224478355993);
         maxTrix.put(0, 1, 0);
         maxTrix.put(0, 2, 657.0822079238818);
@@ -69,7 +68,6 @@ public class Main extends TargetData {
         maxTrix.put(2, 0, 0);
         maxTrix.put(2, 1, 0);
         maxTrix.put(2, 2, 1);
-
         Mat distco = new Mat(1, 5, CV_32FC1);
         distco.put(0, 0, 0.1297334884159764);
         distco.put(0, 1, -0.9730374784207438);
@@ -79,22 +77,19 @@ public class Main extends TargetData {
 
         var newCameraMatrix = Calib3d.getOptimalNewCameraMatrix(maxTrix, distco,
             new Size(1780, 720), 1);
-
-
-
         Calib3d.undistort(undist, frame, newCameraMatrix, distco);
-        Imgproc.GaussianBlur(frame, frame, new Size(41, 41), 2, 2);
+        //Imgproc.GaussianBlur(frame, frame, new Size(41, 41), 2, 2);
         detectpubs.process(frame);
+        //Imgproc.adaptiveThreshold(frame,frame,20,ADAPTIVE_THRESH_GAUSSIAN_C,THRESH_BINARY,21,0);
+       /* Imgproc.erode(frame, frame, new Mat(), new Point(), 2, BORDER_CONSTANT);
+        Imgproc.dilate(frame, frame, new Mat(), new Point(), 3, BORDER_CONSTANT);*/
+
         var contours = detectpubs.findContoursOutput();
         Imgproc.drawContours(frame, contours, 0, new Scalar(255, 255, 0), 2, 3);
         ContourDisplay(contours, frame);
-
         vidpanelNorm = VideoFeedControl.CreateVideo(""
             + "normal", undist, vidpanelNorm);
         vidpanel = VideoFeedControl.CreateVideo("map1", frame, vidpanel);
-
-
-
       }
     }
   }
@@ -104,6 +99,7 @@ public class Main extends TargetData {
     // int k = 0;
     // List<Double> averageRect = new ArrayList<>();
     // ^^use for getting ratio data
+
     int i = 0;
     List<TargetData> targetList = new ArrayList<>();
     for (MatOfPoint contour : contours) {
@@ -118,30 +114,11 @@ public class Main extends TargetData {
           contArea = contourArea(GripPipeline.origContour.get(i));
         } // needed to make sure there is no indexoutofbounds error because opencv for java never got around to really fixing convex hull ops :))))))))
         i++;
-
-        var convexArea = contourArea(convexHulls);
-        targetFullnessRatio = contArea / convexArea;
-        if (!Double.isNaN(targetFullnessRatio) && targetFullnessRatio != 0.0) {
-          System.out.println(targetFullnessRatio);
-
-        }
-
-        if (targetFullnessRatio > .1 && targetFullnessRatio < 0.25) { //Aspect ratio checking
-          TargetData target = new TargetData();
-
-          Imgproc.rectangle(frame, rect, new Scalar(255, 0, 0), 1);
-          target.setTargetCenter(new Point(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0));
-          Imgproc.circle(frame, target.getTargetCenter(), 1, new Scalar(0, 0, 255), 1);
-
-          target.setTargetX(
-              (target.getTargetCenter().x - (frame.width() / 2.0)) / (frame.width() / 2.0));
-          target.setTargetY(
-              (target.getTargetCenter().y - (frame.height() / 2.0)) / (frame.height() / 2.0));
-          targetList.add(target);
-        }
+        targetFullnessRatio = getTargetFullnessRatio(contArea, convexHulls);
+        checkAspectRatio(frame, targetList, rect, targetFullnessRatio);
       }
     }
-    for (var target : targetList) {
+    for (var target : targetList) { // goes through target list adding target data to screen
       DecimalFormat decimalFormat = new DecimalFormat("0.0000");
       var targetCoordsX = (decimalFormat.format(target.getTargetX()) + "X");
       var targetCoordsY = (decimalFormat.format(target.getTargetY()) + "Y");
@@ -157,6 +134,41 @@ public class Main extends TargetData {
       Imgproc.arrowedLine(frame, new Point(frame.width() / 2.0, frame.height() / 2.0),
           target.getTargetCenter(), new Scalar(255, 0, 0)); // Draws line to center of target
     }
+  }
+
+  /**
+   *
+   * @param frame main video frame
+   * @param targetList list of TargetData class, contains x,y, and center position
+   * @param rect A rectangle around target contour
+   * @param targetFullnessRatio guess and check
+   */
+  private static void checkAspectRatio(Mat frame, List<TargetData> targetList, Rect rect,
+      double targetFullnessRatio) {
+    if (targetFullnessRatio > .1 && targetFullnessRatio < 0.28) { //Aspect ratio checking
+      TargetData target = new TargetData();
+      Imgproc.rectangle(frame, rect, new Scalar(255, 0, 0), 1);
+      target.setTargetCenter(new Point(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0));
+      Imgproc.circle(frame, target.getTargetCenter(), 1, new Scalar(0, 0, 255), 1);
+
+      target.setTargetX(
+          (target.getTargetCenter().x - (frame.width() / 2.0)) / (frame.width() / 2.0));
+      target.setTargetY(
+          (target.getTargetCenter().y - (frame.height() / 2.0)) / (frame.height() / 2.0));
+      targetList.add(target);
+    }
+  }
+
+
+  private static double getTargetFullnessRatio(double contArea, MatOfPoint convexHulls) {
+    double targetFullnessRatio;
+    var convexArea = contourArea(convexHulls);
+    targetFullnessRatio = contArea / convexArea;
+    if (!Double.isNaN(targetFullnessRatio) && targetFullnessRatio != 0.0) {
+      System.out.println(targetFullnessRatio);
+
+    }
+    return targetFullnessRatio;
   }
 
 
